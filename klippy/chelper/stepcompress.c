@@ -535,6 +535,7 @@ stepcompress_push_const(
         steps = -steps;
         step_offset = -step_offset;
     }
+    step_offset = (step_offset<-.5 ? -.5 : (step_offset>.5 ? .5 : step_offset));
     int count = steps + .5 - step_offset;
     if (count <= 0 || count > 10000000) {
         if (count && steps) {
