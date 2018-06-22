@@ -432,7 +432,7 @@ class PrinterLCD:
         # display buttons
         self.encoder_a_pin = config.get('encoder_a_pin', None)
         self.encoder_b_pin = config.get('encoder_b_pin', None)
-        self.encoder_resolution = config.getint('encoder_resolution', minval=1)
+        self.encoder_resolution = config.getint('encoder_resolution', 1, minval=1)
         self.click_button_pin = config.get('click_button_pin', None)
         self.back_button_pin = config.get('back_button_pin', None)
         self.up_button_pin = config.get('up_button_pin', None)
@@ -515,6 +515,8 @@ class PrinterLCD:
         self.lcd_chip.write_graphics(x, y, 15, [0xff]*width)
     # Screen updating
     def screen_update_event(self, eventtime):
+        encoder_steps = 0
+        click_button = back_button = up_button = down_button = None
         # default refresh rate
         refresh_delay = .500
         self.lcd_chip.clear()
@@ -550,7 +552,7 @@ class PrinterLCD:
                  self.menu.back()        
                 
             self.menu.update_info(eventtime)
-            for y, line in enumerate(self.menu.update()):
+            for y, line in enumerate(self.menu.update(eventtime)):
                 self.lcd_chip.write_text(0, y, line)
         else:
             refresh_delay = .500
