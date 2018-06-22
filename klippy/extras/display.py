@@ -429,8 +429,16 @@ class PrinterLCD:
         self.reactor = self.printer.get_reactor()
         self.lcd_chip = config.getchoice('lcd_type', LCD_chips)(config)
         self.lcd_type = config.get('lcd_type')
+        # display buttons
+        self.encoder_a_pin = config.get('encoder_a_pin', None)
+        self.encoder_b_pin = config.get('encoder_b_pin', None)
+        self.encoder_resolution = config.getint('encoder_resolution', minval=1)
+        self.click_button_pin = config.get('click_button_pin', None)
+        self.back_button_pin = config.get('back_button_pin', None)
+        self.up_button_pin = config.get('up_button_pin', None)
+        self.down_button_pin = config.get('down_button_pin', None)
         # printer objects
-        self.gcode = self.toolhead = self.sdcard = None
+        self.buttons = self.menu = self.gcode = self.toolhead = self.sdcard = None
         self.fan = self.extruder0 = self.extruder1 = self.heater_bed = None
         # screen updating
         self.screen_update_timer = self.reactor.register_timer(
@@ -448,6 +456,8 @@ class PrinterLCD:
             self.extruder0 = self.printer.lookup_object('extruder0', None)
             self.extruder1 = self.printer.lookup_object('extruder1', None)
             self.heater_bed = self.printer.lookup_object('heater_bed', None)
+            self.buttons = self.printer.lookup_object('buttons', None)
+            self.menu = self.printer.lookup_object('menu', None)
             self.progress = None
             self.gcode.register_command('M73', self.cmd_M73)
             # Load glyphs
@@ -455,6 +465,18 @@ class PrinterLCD:
             self.load_glyph(self.BED2_GLYPH, heat2_icon)
             self.load_glyph(self.FAN1_GLYPH, fan1_icon)
             self.load_glyph(self.FAN2_GLYPH, fan2_icon)
+            # register buttons
+            if self.buttons:
+                if self.encoder_a_pin and self.encoder_b_pin:
+                    self.buttons.setup_encoder(self.encoder_a_pin, self.encoder_b_pin, self.encoder_resolution)
+                if self.click_button_pin:
+                    self.buttons.register_button('click_button', self.click_button_pin)
+                if self.back_button_pin:
+                    self.buttons.register_button('back_button', self.back_button_pin)
+                if self.up_button_pin:
+                    self.buttons.register_button('up_button', self.up_button_pin)
+                if self.down_button_pin:
+                    self.buttons.register_button('down_button', self.down_button_pin)                    
             # Start screen update timer
             self.reactor.update_timer(self.screen_update_timer, self.reactor.NOW)
     # ST7920 Glyphs
@@ -493,13 +515,51 @@ class PrinterLCD:
         self.lcd_chip.write_graphics(x, y, 15, [0xff]*width)
     # Screen updating
     def screen_update_event(self, eventtime):
+        # default refresh rate
+        refresh_delay = .500
         self.lcd_chip.clear()
-        if self.lcd_type == 'hd44780':
-            self.screen_update_hd44780(eventtime)
+        
+        # check buttons
+        if self.buttons:            
+            if self.encoder_a_pin and self.encoder_b_pin:
+                encoder_steps = self.buttons.get_encoder_steps()
+            click_button = self.buttons.check_button('click_button')
+            back_button = self.buttons.check_button('back_button')
+            up_button = self.buttons.check_button('up_button')
+            down_button = self.buttons.check_button('down_button')
+        
+        if click_button and self.menu and not self.menu.is_running():
+            # lets start and populate the menu items
+            self.menu.begin(eventtime)
+            click_button = None
+
+        if self.menu and self.menu.is_running():
+            refresh_delay = .100
+            if encoder_steps > 0:
+                self.menu.up()
+            if encoder_steps < 0:
+                self.menu.down()
+
+            if up_button:
+                self.menu.up()
+            elif down_button:
+                 self.menu.down()
+            elif click_button:
+                 self.menu.select()
+            elif back_button:
+                 self.menu.back()        
+                
+            self.menu.update_info(eventtime)
+            for y, line in enumerate(self.menu.update()):
+                self.lcd_chip.write_text(0, y, line)
         else:
-            self.screen_update_st7920(eventtime)
+            refresh_delay = .500
+            if self.lcd_type == 'hd44780':
+                self.screen_update_hd44780(eventtime)
+            else:
+                self.screen_update_st7920(eventtime)
         self.lcd_chip.flush()
-        return eventtime + .500
+        return eventtime + refresh_delay
     def screen_update_hd44780(self, eventtime):
         lcd_chip = self.lcd_chip
         # Heaters
